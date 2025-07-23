@@ -1,0 +1,355 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Playlist</h2>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Controls</th>
+            <th>Status</th>
+            <th>Youtube URL</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for audio in audio_files %}
+        <tr data-index="{{ loop.index0 }}">
+            <td>{{ audio[0] }}</td>
+            <td>
+                <button class="btn btn-primary btn-sm control-btn" 
+                        data-audio="{{ audio[1] }}"
+                        data-state="play">
+                    Play
+                </button>
+            </td>
+            <td>
+                <span class="playing-indicator"></span>
+            </td>
+            <td>{{ audio[2] }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Add padding at the bottom to prevent player overlap -->
+<div style="margin-bottom: 100px;"></div>
+
+<!-- Fixed player bar at the bottom -->
+<div class="player-bar">
+    <div class="player-content">
+        <div class="now-playing">
+            <span id="currentSong">No track selected</span>
+        </div>
+        <div class="controls-container">
+            <div class="seek-container">
+                <span id="currentTime">0:00</span>
+                <input type="range" id="seekBar" value="0" class="seek-bar">
+                <span id="duration">0:00</span>
+            </div>
+            <div class="volume-container">
+                <i class="volume-icon">🔊</i>
+                <input type="range" id="volumeBar" 
+                       value="100" min="0" max="100" 
+                       class="volume-bar">
+            </div>
+        </div>
+    </div>
+    <audio id="audioPlayer"></audio>
+</div>
+
+<style>
+.player-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: #f8f9fa;
+    border-top: 1px solid #dee2e6;
+    padding: 10px 0;
+    z-index: 1000;
+}
+
+.player-content {
+    width: 90%;
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.now-playing {
+    text-align: center;
+    font-weight: bold;
+    color: #666;
+}
+
+.seek-container {
+    display: flex;
+    min-width: 200px;
+    width: 100%;
+    align-items: center;
+    gap: 10px;
+}
+
+.seek-bar {
+    flex-grow: 1;
+    height: 5px;
+    appearance: none;
+    background: #ddd;
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.seek-bar::-webkit-slider-thumb {
+    appearance: none;
+    width: 15px;
+    height: 15px;
+    background: #007bff;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.seek-bar::-moz-range-thumb {
+    width: 15px;
+    height: 15px;
+    background: #007bff;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+#currentTime, #duration {
+    min-width: 45px;
+    color: #666;
+}
+
+.controls-container {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.volume-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 150px;
+}
+
+.volume-bar {
+    width: 100px;
+    height: 5px;
+    appearance: none;
+    background: #ddd;
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.volume-bar::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    background: #007bff;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.volume-bar::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: #007bff;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+.volume-icon {
+    font-style: normal;
+    cursor: pointer;
+}
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const audioPlayer = document.getElementById('audioPlayer');
+    const seekBar = document.getElementById('seekBar');
+    const currentTimeDisplay = document.getElementById('currentTime');
+    const durationDisplay = document.getElementById('duration');
+    const currentSongDisplay = document.getElementById('currentSong');
+    const rows = document.querySelectorAll('tbody tr');
+    let currentPlayingRow = null;
+    let isDraggingSeek = false;
+    const volumeBar = document.getElementById('volumeBar');
+    const volumeIcon = document.querySelector('.volume-icon');
+    let lastVolume = 1;
+
+    function formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        seconds = Math.floor(seconds % 60);
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+
+    function updateButtonState(button, state) {
+        button.dataset.state = state;
+        button.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+        
+        button.classList.remove('btn-primary', 'btn-warning', 'btn-success');
+        switch(state) {
+            case 'play':
+                button.classList.add('btn-primary');
+                break;
+            case 'pause':
+                button.classList.add('btn-warning');
+                break;
+            case 'resume':
+                button.classList.add('btn-success');
+                break;
+        }
+    }
+
+    function resetAllButtons(exceptButton = null) {
+        document.querySelectorAll('.control-btn').forEach(btn => {
+            if (btn !== exceptButton) {
+                updateButtonState(btn, 'play');
+            }
+        });
+    }
+
+    function playNext() {
+        if (!currentPlayingRow) return;
+        
+        const currentIndex = parseInt(currentPlayingRow.dataset.index);
+        const nextIndex = currentIndex + 1;
+        
+        if (nextIndex < rows.length) {
+            const nextRow = rows[nextIndex];
+            const nextButton = nextRow.querySelector('.control-btn');
+            nextButton.click();
+        }
+    }
+
+    function playAudio(row, button) {
+        // Stop current playing audio if any
+        if (currentPlayingRow && currentPlayingRow !== row) {
+            const oldButton = currentPlayingRow.querySelector('.control-btn');
+            updateButtonState(oldButton, 'play');
+        }
+        
+        // Update current playing row
+        currentPlayingRow = row;
+        
+        // Play the new audio
+        const audioPath = button.dataset.audio;
+        audioPlayer.src = '/' + audioPath;
+        audioPlayer.play();
+        updateButtonState(button, 'pause');
+        
+        // Update current song display
+        currentSongDisplay.textContent = row.querySelector('td').textContent;
+    }
+
+    // Seek bar event listeners
+    seekBar.addEventListener('mousedown', () => {
+        isDraggingSeek = true;
+    });
+
+    seekBar.addEventListener('mouseup', () => {
+        isDraggingSeek = false;
+        audioPlayer.currentTime = seekBar.value;
+    });
+
+    seekBar.addEventListener('input', () => {
+        if (isDraggingSeek) {
+            currentTimeDisplay.textContent = formatTime(seekBar.value);
+        }
+    });
+
+    // Audio player event listeners
+    audioPlayer.addEventListener('loadedmetadata', () => {
+        seekBar.max = Math.floor(audioPlayer.duration);
+        durationDisplay.textContent = formatTime(audioPlayer.duration);
+    });
+
+    audioPlayer.addEventListener('timeupdate', () => {
+        if (!isDraggingSeek) {
+            seekBar.value = Math.floor(audioPlayer.currentTime);
+            currentTimeDisplay.textContent = formatTime(audioPlayer.currentTime);
+        }
+    });
+
+    // Handle control buttons
+    document.querySelectorAll('.control-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const row = button.closest('tr');
+            const state = button.dataset.state;
+            
+            switch(state) {
+                case 'play':
+                    resetAllButtons(button);
+                    playAudio(row, button);
+                    break;
+                    
+                case 'pause':
+                    audioPlayer.pause();
+                    updateButtonState(button, 'resume');
+                    break;
+                    
+                case 'resume':
+                    audioPlayer.play();
+                    updateButtonState(button, 'pause');
+                    break;
+            }
+        });
+    });
+
+    // Listen for audio ending
+    audioPlayer.addEventListener('ended', () => {
+        if (currentPlayingRow) {
+            const button = currentPlayingRow.querySelector('.control-btn');
+            updateButtonState(button, 'play');
+            playNext();
+        }
+    });
+
+    // Volume control functions
+    function updateVolumeIcon(volume) {
+        if (volume === 0) {
+            volumeIcon.textContent = '🔇';
+        } else if (volume < 0.5) {
+            volumeIcon.textContent = '🔉';
+        } else {
+            volumeIcon.textContent = '🔊';
+        }
+    }
+
+    // Volume bar event listener
+    volumeBar.addEventListener('input', () => {
+        const volume = volumeBar.value / 100;
+        audioPlayer.volume = volume;
+        lastVolume = volume;
+        updateVolumeIcon(volume);
+    });
+
+    // Volume icon click to mute/unmute
+    volumeIcon.addEventListener('click', () => {
+        if (audioPlayer.volume > 0) {
+            volumeBar.value = 0;
+            audioPlayer.volume = 0;
+            updateVolumeIcon(0);
+        } else {
+            volumeBar.value = lastVolume * 100;
+            audioPlayer.volume = lastVolume;
+            updateVolumeIcon(lastVolume);
+        }
+    });
+
+    // Initialize volume
+    audioPlayer.volume = volumeBar.value / 100;
+});
+</script>
+{% endblock %} 

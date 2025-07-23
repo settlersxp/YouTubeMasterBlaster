@@ -1,0 +1,34 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Download Worker",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "download_worker",
+            "args": [],
+        },
+
+        {
+            "name": "FastAPI",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "main:app",
+                "--reload",
+                "--port",
+                "5000"
+            ],
+            "jinja": true,
+            "justMyCode": true
+        },
+        {
+            "name": "Audio Files Migration",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "audio_files_migration",
+            "args": [],
+        }
+    ]
+} 

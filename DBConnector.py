@@ -1,0 +1,100 @@
+import sqlite3
+
+DB_NAME = 'audio_files.db'
+AUDIO_FILES_TABLE = 'audio_files'
+QUEUED_FOR_DOWNLOAD_TABLE = 'queued_for_download'
+
+# a "singleton" like file with a few methods that allow the other scripts to use the sqlite3 DB
+conn = None
+def new_conn():
+    global conn
+    conn = sqlite3.connect(f'data/{DB_NAME}')
+
+
+def get_conn():
+    global conn
+    return conn
+
+
+def close_conn():
+    global conn
+    conn.close()
+
+
+def get_audio_files():
+    global conn
+    try:
+        cursor = conn.cursor()
+    except Exception:
+        new_conn()
+        cursor = conn.cursor()
+
+    cursor.execute(f'SELECT * FROM {AUDIO_FILES_TABLE}')
+    return cursor.fetchall()
+
+
+def get_from_audio_files_by_task_id(task_id):
+    global conn
+    try:
+        cursor = conn.cursor()
+    except Exception:
+        new_conn()
+        cursor = conn.cursor()
+
+    cursor.execute(f'SELECT * FROM {AUDIO_FILES_TABLE} WHERE task_id = ?', (task_id,))
+    return cursor.fetchone()
+
+
+def insert_into_audio_files(name, file_path, youtube_url):
+    global conn
+    try:
+        cursor = conn.cursor()
+    except Exception:
+        new_conn()
+        cursor = conn.cursor()
+    cursor.execute(f'INSERT INTO {AUDIO_FILES_TABLE} (name, file_path, youtube_url) VALUES (?, ?, ?)', (name, file_path, youtube_url))
+    conn.commit()
+
+
+def insert_into_queue_for_download(url, task_id):
+    global conn
+    try:
+        cursor = conn.cursor()
+    except Exception:
+        new_conn()
+        cursor = conn.cursor()
+    cursor.execute('INSERT INTO queued_for_download (youtube_url, task_id) VALUES (?, ?)', (url, task_id))
+    conn.commit()
+
+
+def get_from_queue_for_download_by_task_id(task_id):
+    global conn
+    try:
+        cursor = conn.cursor()
+    except Exception:
+        new_conn()
+        cursor = conn.cursor()
+
+    cursor.execute('SELECT * FROM queued_for_download WHERE task_id = ?', (task_id,))
+    audio_file = cursor.fetchone()
+    return audio_file
+
+def get_next_song_in_download_queue():
+    global conn
+    try:
+        cursor = conn.cursor()
+    except Exception:
+        new_conn()
+        cursor = conn.cursor()
+    cursor.execute('SELECT * FROM queued_for_download LIMIT 1')
+    return cursor.fetchone()
+
+def delete_from_queue_for_download_by_id(task_id):
+    global conn
+    try:
+        cursor = conn.cursor()
+    except Exception:
+        new_conn()
+        cursor = conn.cursor()
+    cursor.execute('DELETE FROM queued_for_download WHERE task_id = ?', (task_id,))
+    conn.commit()

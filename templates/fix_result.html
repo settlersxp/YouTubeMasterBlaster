@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title">Fix Results</h2>
+                
+                <div class="alert {% if fixed_count > 0 %}alert-success{% else %}alert-info{% endif %} mt-3">
+                    Successfully fixed {{ fixed_count }} file(s)
+                </div>
+
+                {% if errors %}
+                    <div class="alert alert-warning mt-3">
+                        <h4>Errors encountered:</h4>
+                        <ul>
+                            {% for error in errors %}
+                                <li>{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                {% endif %}
+
+                <div class="mt-3">
+                    <a href="/playlist" class="btn btn-primary">Back to Playlist</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

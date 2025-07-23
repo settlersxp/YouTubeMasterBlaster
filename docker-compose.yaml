@@ -1,0 +1,7 @@
+services:
+  youtube-master-blaster:
+    image: youtube-master-blaster:latest
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./static:/app/static

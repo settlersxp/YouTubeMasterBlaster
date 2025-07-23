@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# VS Code
+.vscode/*
+!.vscode/launch.json
+!.vscode/settings.json
+
+# Project specific
+data/audio_files.json
+static/audio/*
+!static/audio/.gitkeep
+data/audio_files.db
