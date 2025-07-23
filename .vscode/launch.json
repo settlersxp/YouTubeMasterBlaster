@@ -18,7 +18,9 @@
                 "main:app",
                 "--reload",
                 "--port",
-                "5000"
+                "5003",
+                "--host",
+                "0.0.0.0"
             ],
             "jinja": true,
             "justMyCode": true
