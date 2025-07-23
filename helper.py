@@ -1,7 +1,6 @@
 import yt_dlp
-import os
 
-cookies_path = os.getenv("COOKIES_PATH", None)
+cookies_path = None
 
 ydl_opts = {
     'cookiefile': cookies_path,

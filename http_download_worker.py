@@ -13,11 +13,12 @@ def main():
         return
     print(f"Server is responding: {ping.status_code}")
 
-    print("Check if app/cookies exists")
-    if not os.path.exists("/app/cookies"):
-        print("app/cookies does not exist")
+    helper.cookies_path = "/app/cookies"
+    print(f"Check if {helper.cookies_path} exists")
+    if not os.path.exists(helper.cookies_path):
+        print(f"{helper.cookies_path} does not exist")
         return
-    print("app/cookies exists")
+    print(f"{helper.cookies_path} exists")
 
     print("Writing test file to output folder")
     with open("static/audio/test.txt", "w") as f:

@@ -30,7 +30,9 @@ NOTE: If the server is running on a Mac you will need to disable the IP tracking
 `uvicorn main:app --host 0.0.0.0 --port 5003 --reload`
 
 ## Running the download worker:
-`docker build -t http_download_worker -f Dockerfile.http_download_worker .`
+`docker build -t youtube-master-base:latest -f Dockerfile.base .` to install ffmpeg and curl on top of python 3.10 slim whenever OS things need updated.
+
+`docker build -t http_download_worker -f Dockerfile.http_download_worker .` to build the download worker application.
 
 `docker run -e SERVER_URL="http://127.0.0.1:5003" --volume /Users/XXXXXXX/Library/Application\ Support/Google/Chrome/Default/Cookies:/app/cookies --volume ./static/audio:/static/audio http_download_worker`
 
