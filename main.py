@@ -48,6 +48,12 @@ def extract_playlist_videos(playlist_url: str) -> List[dict]:
             ]
     return []
 
+@app.get("/ping")
+async def ping():
+    return JSONResponse({
+        "status": "pong"
+    })
+
 @app.get("/")
 async def upload_page(request: Request):
     return templates.TemplateResponse("upload.html", {"request": request})
@@ -58,6 +64,14 @@ async def playlist_page(request: Request):
 
     return templates.TemplateResponse("playlist.html", {
         "request": request,
+        "audio_files": audio_files
+    })
+
+@app.get("/playlist-as-json")
+async def playlist_as_json():
+    audio_files = DBConnector.get_audio_files()
+    return JSONResponse({
+        "status": "success",
         "audio_files": audio_files
     })
 
@@ -153,7 +167,11 @@ async def delete_song_from_download_queue(task_id: str):
 async def move_song_to_audio_files(request: Request):
     request_body = await request.json()
     path = request_body["path"]
-    song_title = request_body["info"]["artist"]+" - "+request_body["info"]["title"]
+    if 'artist' not in request_body["info"] or 'title' not in request_body["info"]:
+        song_title = request_body["info"]["title"]
+    else:
+        song_title = request_body["info"]["artist"]+" - "+request_body["info"]["title"]
+    song_title = song_title.encode('utf-8').decode('utf-8')
     song_url = request_body["info"]["original_url"]
     DBConnector.insert_into_audio_files(song_title, path, song_url)
     return JSONResponse({
