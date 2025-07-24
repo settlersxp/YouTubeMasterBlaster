@@ -54,9 +54,15 @@ async def ping():
         "status": "pong"
     })
 
-@app.get("/")
-async def upload_page(request: Request):
-    return templates.TemplateResponse("upload.html", {"request": request})
+@app.get("/download")
+async def download_page(request: Request, message: str = None, status: str = None):
+    queue_count = DBConnector.get_queue_count()
+    return templates.TemplateResponse("download.html", {
+        "request": request, 
+        "queue_count": queue_count,
+        "message": message,
+        "status": status
+    })
 
 @app.get("/playlist")
 async def playlist_page(request: Request):
@@ -67,94 +73,94 @@ async def playlist_page(request: Request):
         "audio_files": audio_files
     })
 
-@app.get("/playlist-as-json")
-async def playlist_as_json():
-    audio_files = DBConnector.get_audio_files()
-    return JSONResponse({
-        "status": "success",
-        "audio_files": audio_files
-    })
-
 @app.post("/download")
-async def download_audio(name: str = Form(...), url: str = Form(...)):
-    task_id = str(time.time())
-    DBConnector.insert_into_queue_for_download(url, task_id)
-
-    return JSONResponse({
-        "status": "queued",
-        "task_id": task_id
-    })
-
-@app.get("/download-status/{task_id}")
-async def get_download_status(task_id: str):
-    audio_file = DBConnector.get_from_queue_for_download_by_task_id(task_id)
-    
-    # if is not in queued_for_download, it is already downloaded
-    if not audio_file:
-        audio_file = DBConnector.get_from_audio_files_by_task_id(task_id)
-        return {"status": "downloaded", "file_path": audio_file[2]}
-    return {"status": "not_found"}
-
-
-@app.get("/playlist-download")
-async def playlist_download_page(request: Request):
-    return templates.TemplateResponse("playlist_download.html", {"request": request})
-
+async def download_audio(request: Request, name: str = Form(...), url: str = Form(...)):
+    try:
+        task_id = str(time.time())
+        DBConnector.insert_into_queue_for_download(url, task_id)
+        
+        queue_count = DBConnector.get_queue_count()
+        return templates.TemplateResponse("download.html", {
+            "request": request,
+            "queue_count": queue_count,
+            "message": f"Video '{name}' added to download queue",
+            "status": "success"
+        })
+    except Exception as e:
+        queue_count = DBConnector.get_queue_count()
+        return templates.TemplateResponse("download.html", {
+            "request": request,
+            "queue_count": queue_count,
+            "message": f"Error: {str(e)}",
+            "status": "error"
+        })
 
 @app.post("/process-playlist")
-async def process_playlist(url: str = Form(...)):
+async def process_playlist(request: Request, url: str = Form(...)):
     try:
         if not is_playlist_url(url):
-            return JSONResponse({
-                "status": "error",
-                "message": "Not a valid YouTube playlist URL"
+            queue_count = DBConnector.get_queue_count()
+            return templates.TemplateResponse("download.html", {
+                "request": request,
+                "queue_count": queue_count,
+                "message": "Not a valid YouTube playlist URL",
+                "status": "error"
             })
         
         songs = extract_playlist_videos(url)
-
         audio_files = DBConnector.get_audio_files()
 
-        for audio in audio_files:
-            for song in songs:
-                if audio[2] == song["url"]:
-                    songs.remove(song)
-                    break
-    
-        # queue the remaining videos
+        # Filter out songs that are already downloaded
+        filtered_songs = []
         for song in songs:
-            await download_audio(song["title"], song["url"])
+            is_already_downloaded = False
+            for audio in audio_files:
+                if audio[2] == song["url"]:
+                    is_already_downloaded = True
+                    break
+            if not is_already_downloaded:
+                filtered_songs.append(song)
+    
+        # Queue the remaining videos
+        for song in filtered_songs:
+            task_id = str(time.time())
+            DBConnector.insert_into_queue_for_download(song["url"], task_id)
+            time.sleep(0.01)  # Small delay to ensure unique task_ids
 
-        return JSONResponse({
-            "status": "success",
-            "songs": songs
+        queue_count = DBConnector.get_queue_count()
+        return templates.TemplateResponse("download.html", {
+            "request": request,
+            "queue_count": queue_count,
+            "message": f"Added {len(filtered_songs)} videos from playlist to download queue",
+            "status": "success"
         })
     except Exception as e:
-        return JSONResponse({
-            "status": "error",
-            "message": str(e)
+        queue_count = DBConnector.get_queue_count()
+        return templates.TemplateResponse("download.html", {
+            "request": request,
+            "queue_count": queue_count,
+            "message": f"Error: {str(e)}",
+            "status": "error"
         })
 
-@app.post("/download-playlist-item")
-async def download_playlist_item(name: str = Form(...), url: str = Form(...)):
-    return await download_audio(name, url)
-
+# Worker endpoints - these are needed for the download worker
 @app.get("/next-song-in-download-queue")
 async def next_song_in_download_queue():
-    while True:
-        next_song = DBConnector.get_next_song_in_download_queue()
-        if next_song:
-            if os.path.exists(f"static/audio/{next_song[0]}.mp3"):
-                print(f"File {next_song[0]}.mp3 already exists")
-                DBConnector.delete_from_queue_for_download_by_id(next_song[0])
-            else:
-                return JSONResponse({
-                    "status": "success",
-                    "song": next_song
-                })
+    next_song = DBConnector.get_next_song_in_download_queue()
+    if next_song:
+        if os.path.exists(f"static/audio/{next_song[0]}.mp3"):
+            print(f"File {next_song[0]}.mp3 already exists")
+            DBConnector.delete_from_queue_for_download_by_id(next_song[0])
+            return JSONResponse({"status": "no_song"})
         else:
             return JSONResponse({
-                "status": "no_song"
+                "status": "success",
+                "song": next_song
             })
+    else:
+        return JSONResponse({
+            "status": "no_song"
+        })
 
 @app.delete("/delete-song-from-download-queue/{task_id}")
 async def delete_song_from_download_queue(task_id: str):

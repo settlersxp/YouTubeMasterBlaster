@@ -98,3 +98,13 @@ def delete_from_queue_for_download_by_id(task_id):
         cursor = conn.cursor()
     cursor.execute('DELETE FROM queued_for_download WHERE task_id = ?', (task_id,))
     conn.commit()
+
+def get_queue_count():
+    global conn
+    try:
+        cursor = conn.cursor()
+    except Exception:
+        new_conn()
+        cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM queued_for_download')
+    return cursor.fetchone()[0]

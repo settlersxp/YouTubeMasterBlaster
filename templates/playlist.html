@@ -47,8 +47,14 @@
         </div>
         <div class="controls-container">
             <div class="play-pause-container">
+                <button id="prevBtn" class="btn btn-secondary btn-sm mr-2" disabled>
+                    <i class="nav-icon">⏮️</i>
+                </button>
                 <button id="playerControlBtn" class="btn btn-primary btn-sm" disabled>
                     <i class="play-icon">▶️</i>
+                </button>
+                <button id="nextBtn" class="btn btn-secondary btn-sm ml-2" disabled>
+                    <i class="nav-icon">⏭️</i>
                 </button>
             </div>
             <div class="seek-container">
@@ -99,9 +105,10 @@
     display: flex;
     justify-content: center;
     margin-right: 10px;
+    gap: 5px;
 }
 
-.play-icon {
+.play-icon, .nav-icon {
     font-style: normal;
 }
 
@@ -220,9 +227,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const CURRENT_SONG_KEY = 'currentSong';
     const CURRENT_TIME_KEY = 'currentTime';
     const PLAY_COUNTS_KEY = 'playCounts';
+    const SONG_HISTORY_KEY = 'songHistory';
+    const HISTORY_POSITION_KEY = 'historyPosition';
     
     // Initialize play counts from local storage or create new
     let playCounts = JSON.parse(localStorage.getItem(PLAY_COUNTS_KEY)) || {};
+    
+    // Initialize song history from local storage or create new
+    let songHistory = JSON.parse(localStorage.getItem(SONG_HISTORY_KEY)) || [];
+    let historyPosition = parseInt(localStorage.getItem(HISTORY_POSITION_KEY)) || -1;
     
     // Auto-refresh the playlist using the JSON endpoint
     function refreshPlaylist() {
@@ -281,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Start auto-refresh
-    setInterval(refreshPlaylist, 5000);
+    setInterval(refreshPlaylist, 10000);
     
     // Function to restore playing state after refresh
     function restorePlayingState() {
@@ -302,6 +315,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     audioPlayer.currentTime = savedTime;
                     audioPlayer.removeEventListener('canplay', setTimeOnce);
                 });
+                
+                // Update current song display
+                currentSongDisplay.textContent = row.querySelector('.song-name').textContent;
+                
+                // Enable player control button
+                playerControlBtn.disabled = false;
+                
+                // Update navigation buttons
+                updateNavigationButtons();
             }
         }
     }
@@ -364,6 +386,22 @@ document.addEventListener('DOMContentLoaded', () => {
     function playNext() {
         if (!currentPlayingRow) return;
         
+        // If we're navigating through history and not at the end
+        if (historyPosition < songHistory.length - 1) {
+            historyPosition++;
+            localStorage.setItem(HISTORY_POSITION_KEY, historyPosition);
+            
+            const nextAudioPath = songHistory[historyPosition];
+            const button = document.querySelector(`.control-btn[data-audio="${nextAudioPath}"]`);
+            
+            if (button) {
+                const row = button.closest('tr');
+                playAudio(row, button, false); // Don't add to history when navigating
+                return;
+            }
+        }
+        
+        // Normal next song behavior (end of history or button not found)
         const visibleRows = getVisibleRows();
         const currentIndex = visibleRows.indexOf(currentPlayingRow);
         const nextIndex = currentIndex + 1;
@@ -380,8 +418,23 @@ document.addEventListener('DOMContentLoaded', () => {
             button.click();
         }
     }
+    
+    function playPrevious() {
+        if (historyPosition > 0) {
+            historyPosition--;
+            localStorage.setItem(HISTORY_POSITION_KEY, historyPosition);
+            
+            const prevAudioPath = songHistory[historyPosition];
+            const button = document.querySelector(`.control-btn[data-audio="${prevAudioPath}"]`);
+            
+            if (button) {
+                const row = button.closest('tr');
+                playAudio(row, button, false); // Don't add to history when navigating
+            }
+        }
+    }
 
-    function playAudio(row, button) {
+    function playAudio(row, button, addToHistory = true) {
         // Highlight the row
         highlightPlayingRow(row);
         
@@ -396,6 +449,25 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(() => {
                 // Increment play count on successful play
                 incrementPlayCount(audioPath);
+                
+                // Add to history if this is a new selection (not navigation)
+                if (addToHistory) {
+                    // If we're not at the end of the history, truncate it
+                    if (historyPosition < songHistory.length - 1) {
+                        songHistory = songHistory.slice(0, historyPosition + 1);
+                    }
+                    
+                    // Add current song to history
+                    songHistory.push(audioPath);
+                    historyPosition = songHistory.length - 1;
+                    
+                    // Save history to local storage
+                    localStorage.setItem(SONG_HISTORY_KEY, JSON.stringify(songHistory));
+                    localStorage.setItem(HISTORY_POSITION_KEY, historyPosition);
+                }
+                
+                // Update navigation buttons state
+                updateNavigationButtons();
             })
             .catch(error => console.error('Error playing audio:', error));
         
@@ -408,6 +480,31 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Save current song to local storage
         localStorage.setItem(CURRENT_SONG_KEY, audioPath);
+    }
+    
+    // Update navigation buttons enabled/disabled state
+    function updateNavigationButtons() {
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        
+        // Previous button is enabled if we have history to go back to
+        prevBtn.disabled = historyPosition <= 0;
+        
+        // Next button is enabled if we have history to go forward to
+        // or if there are more songs in the playlist
+        const hasForwardHistory = historyPosition < songHistory.length - 1;
+        const hasMoreSongs = getVisibleRows().length > 0;
+        
+        nextBtn.disabled = !(hasForwardHistory || hasMoreSongs);
+    }
+    
+    // Initialize navigation buttons state
+    function initNavigationButtons() {
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        
+        prevBtn.disabled = historyPosition <= 0;
+        nextBtn.disabled = !currentPlayingRow;
     }
 
     // Seek bar event listeners
@@ -466,7 +563,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.control-btn').forEach(button => {
             button.addEventListener('click', () => {
                 const row = button.closest('tr');
-                playAudio(row, button);
+                playAudio(row, button, true);
             });
         });
     }
@@ -536,8 +633,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize volume
     audioPlayer.volume = volumeBar.value / 100;
     
+    // Initialize navigation buttons
+    initNavigationButtons();
+    
     // Restore playing state on page load
     restorePlayingState();
+    
+    // Add event listeners for next and previous buttons
+    document.getElementById('nextBtn').addEventListener('click', playNext);
+    document.getElementById('prevBtn').addEventListener('click', playPrevious);
 });
 </script>
 {% endblock %} 
