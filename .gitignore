@@ -19,3 +19,4 @@ data/audio_files.json
 static/audio/*
 !static/audio/.gitkeep
 data/audio_files.db
+settings.personal
