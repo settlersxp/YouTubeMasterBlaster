@@ -178,6 +178,14 @@ async def delete_song_from_download_queue(task_id: str):
         "status": "success"
     })
 
+@app.get("/playlist-as-json")
+async def playlist_as_json():
+    audio_files = DBConnector.get_audio_files()
+    return JSONResponse({
+        "status": "success",
+        "audio_files": audio_files
+    })
+
 @app.post("/move-song-to-audio-files")
 async def move_song_to_audio_files(request: Request):
     request_body = await request.json()
