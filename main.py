@@ -64,6 +64,15 @@ async def download_page(request: Request, message: str = None, status: str = Non
         "status": status
     })
 
+@app.get("/")
+async def home_page(request: Request):
+    audio_files = DBConnector.get_audio_files()
+
+    return templates.TemplateResponse("playlist.html", {
+        "request": request,
+        "audio_files": audio_files
+    })
+
 @app.get("/playlist")
 async def playlist_page(request: Request):
     audio_files = DBConnector.get_audio_files()
