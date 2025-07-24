@@ -5,6 +5,8 @@
 
 ## Activate the virtual environment
 `source venv/bin/activate`
+or
+`venv/scripts/activate`
 
 ## Install the required packages
 `pip install -r requirements.txt`

@@ -2,6 +2,9 @@ FROM youtube-master-base:latest
 
 WORKDIR /app
 
+# Create necessary directory for audio files
+RUN mkdir -p static/audio
+
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 

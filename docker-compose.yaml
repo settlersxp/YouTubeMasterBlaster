@@ -1,7 +1,21 @@
 services:
   youtube-master-blaster:
-    image: youtube-master-blaster:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "5001:5000"
+      - "5003:5003"
     volumes:
-      - ./static:/app/static
+      - ./static/audio:/app/static/audio
+    depends_on:
+      - http-download-worker
+
+  http-download-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.http_download_worker
+    environment:
+      - SERVER_URL=http://youtube-master-blaster:5003
+    volumes:
+      - ./static/audio:/app/static/audio
+      - ${BROWSER_COOKIES_PATH:-C:\Users\Gabz\AppData\Local\BraveSoftware\Brave-Browser\User Data\Profile 1\Network\Cookies}:/app/cookies

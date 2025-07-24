@@ -27,14 +27,33 @@ def main():
 
     while True:
         song = requests.get(f"{server_url}/next-song-in-download-queue")
+        if song.status_code == 200 and song.json()["status"] == "no_song":
+            time.sleep(10)
+            continue
+
+        if song.status_code != 200:
+            print(f"Error getting next song: {song.status_code}")
+            time.sleep(10)
+            continue
+
         url = song.json()["song"][0]
         task_id = song.json()["song"][1]
         try:
             audio_file, info = helper.download_song(url)
         except Exception as e:
-            print(e)
-            time.sleep(10)
-            continue
+            if "Video unavailable" in str(e):
+                print(f"Video unavailable: {e}")
+                deleted_successfully = requests.delete(f"{server_url}/delete-song-from-download-queue/{task_id}")
+                if deleted_successfully.status_code == 200:
+                    print(f"Song {url} deleted from download queue")
+                else:
+                    print(f"Song {url} not deleted from download queue")
+                time.sleep(10)
+                continue
+            else:
+                print(f"Error downloading song: {e}")
+                time.sleep(10)
+                continue
         
         info.pop("formats")
         info.pop("thumbnails")
