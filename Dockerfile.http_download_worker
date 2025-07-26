@@ -4,6 +4,7 @@ WORKDIR /app
 
 # Create necessary directory for audio files
 RUN mkdir -p static/audio
+RUN mkdir -p static/video
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt

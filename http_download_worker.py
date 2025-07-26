@@ -26,8 +26,8 @@ def main():
     print("Test file written")
 
     while True:
-        song = requests.get(f"{server_url}/next-song-in-download-queue")
-        if song.status_code == 200 and song.json()["status"] == "no_song":
+        song = requests.get(f"{server_url}/next-task-in-download-queue")
+        if song.status_code == 200 and song.json()["status"] == "no_task":
             time.sleep(10)
             continue
 
@@ -36,10 +36,14 @@ def main():
             time.sleep(10)
             continue
 
-        url = song.json()["song"][0]
-        task_id = song.json()["song"][1]
+        url = song.json()["task"][0]
+        task_id = song.json()["task"][1]
+        is_video = song.json()["task"][2]
         try:
-            audio_file, info = helper.download_song(url)
+            if is_video:
+                audio_file, info = helper.download_video(url)
+            else:
+                audio_file, info = helper.download_song(url)
         except Exception as e:
             if "Video unavailable" in str(e):
                 print(f"Video unavailable: {e}")

@@ -4,10 +4,8 @@ WORKDIR /app
 
 # Create necessary directories
 RUN mkdir -p static/audio
+RUN mkdir -p static/video
 RUN mkdir -p templates
-
-# Declare volume for audio files
-VOLUME /app/static/audio
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt

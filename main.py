@@ -82,11 +82,10 @@ async def playlist_page(request: Request):
         "audio_files": audio_files
     })
 
-@app.post("/download")
-async def download_audio(request: Request, name: str = Form(...), url: str = Form(...)):
+@app.post("/download_video")
+async def download_video(request: Request, name: str = Form(...), url: str = Form(...)):
     try:
-        task_id = str(time.time())
-        DBConnector.insert_into_queue_for_download(url, task_id)
+        DBConnector.insert_into_queue_with_priority(url, is_video=1)
         
         queue_count = DBConnector.get_queue_count()
         return templates.TemplateResponse("download.html", {
@@ -153,22 +152,22 @@ async def process_playlist(request: Request, url: str = Form(...)):
         })
 
 # Worker endpoints - these are needed for the download worker
-@app.get("/next-song-in-download-queue")
-async def next_song_in_download_queue():
-    next_song = DBConnector.get_next_song_in_download_queue()
-    if next_song:
-        if os.path.exists(f"static/audio/{next_song[0]}.mp3"):
-            print(f"File {next_song[0]}.mp3 already exists")
-            DBConnector.delete_from_queue_for_download_by_id(next_song[0])
-            return JSONResponse({"status": "no_song"})
+@app.get("/next-task-in-download-queue")
+async def next_task_in_download_queue():
+    next_task = DBConnector.get_next_task_in_download_queue()
+    if next_task:
+        if os.path.exists(f"static/audio/{next_task[0]}.mp3"):
+            print(f"File {next_task[0]}.mp3 already exists")
+            DBConnector.delete_from_queue_for_download_by_id(next_task[0])
+            return JSONResponse({"status": "no_task"})
         else:
             return JSONResponse({
                 "status": "success",
-                "song": next_song
+                "task": next_task
             })
     else:
         return JSONResponse({
-            "status": "no_song"
+            "status": "no_task"
         })
 
 @app.delete("/delete-song-from-download-queue/{task_id}")

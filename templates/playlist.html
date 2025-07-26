@@ -1,13 +1,16 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>Playlist <span class="badge bg-secondary">{{ audio_files|length }} songs</span></h2>
+<div class="sticky-top">
+    <div class="container-playlist-header">
+        <h2>Playlist <span class="badge bg-secondary">{{ audio_files|length }} songs</span></h2>
+    </div>
 
-<!-- Search bar -->
-<div class="mb-3">
-    <input type="text" id="searchInput" class="form-control" placeholder="Search by name or YouTube URL...">
+    <!-- Search bar -->
+    <div class="mb-3 container-playlist-search">
+        <input type="text" id="searchInput" class="form-control" placeholder="Search by name or YouTube URL...">
+    </div>
 </div>
-
 <table class="table table-hover">
     <thead>
         <tr>
@@ -68,139 +71,157 @@
 </div>
 
 <style>
-.player-bar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    background: #f8f9fa;
-    border-top: 1px solid #dee2e6;
-    padding: 10px 0;
-    z-index: 1000;
-}
+    .badge{
+        font-size: 0.75rem;
+        font-weight: bold;
+        padding: 5px;
+    }
 
-.player-content {
-    width: 90%;
-    max-width: 1200px;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
+    .container-playlist-header h2 {
+        padding-top: 10px;
+        max-width: 50%;
+        background-color: #f8f9fa;
+    }
 
-.now-playing {
-    text-align: center;
-    font-weight: bold;
-    color: #666;
-}
+    .sticky-top {
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+    }
 
-.play-pause-container {
-    display: flex;
-    justify-content: center;
-    margin-right: 10px;
-    gap: 5px;
-}
+    .player-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background: #f8f9fa;
+        border-top: 1px solid #dee2e6;
+        padding: 10px 0;
+        z-index: 1000;
+    }
 
-.play-icon, .nav-icon {
-    font-style: normal;
-}
+    .player-content {
+        width: 90%;
+        max-width: 1200px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
 
-.seek-container {
-    display: flex;
-    min-width: 200px;
-    width: 100%;
-    align-items: center;
-    gap: 10px;
-}
+    .now-playing {
+        text-align: center;
+        font-weight: bold;
+        color: #666;
+    }
 
-.seek-bar {
-    flex-grow: 1;
-    height: 5px;
-    appearance: none;
-    background: #ddd;
-    border-radius: 2px;
-    cursor: pointer;
-}
+    .play-pause-container {
+        display: flex;
+        justify-content: center;
+        margin-right: 10px;
+        gap: 5px;
+    }
 
-.seek-bar::-webkit-slider-thumb {
-    appearance: none;
-    width: 15px;
-    height: 15px;
-    background: #007bff;
-    border-radius: 50%;
-    cursor: pointer;
-}
+    .play-icon, .nav-icon {
+        font-style: normal;
+    }
 
-.seek-bar::-moz-range-thumb {
-    width: 15px;
-    height: 15px;
-    background: #007bff;
-    border-radius: 50%;
-    cursor: pointer;
-    border: none;
-}
+    .seek-container {
+        display: flex;
+        min-width: 200px;
+        width: 100%;
+        align-items: center;
+        gap: 10px;
+    }
 
-#currentTime, #duration {
-    min-width: 45px;
-    color: #666;
-}
+    .seek-bar {
+        flex-grow: 1;
+        height: 5px;
+        appearance: none;
+        background: #ddd;
+        border-radius: 2px;
+        cursor: pointer;
+    }
 
-.controls-container {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-}
+    .seek-bar::-webkit-slider-thumb {
+        appearance: none;
+        width: 15px;
+        height: 15px;
+        background: #007bff;
+        border-radius: 50%;
+        cursor: pointer;
+    }
 
-.volume-container {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 150px;
-}
+    .seek-bar::-moz-range-thumb {
+        width: 15px;
+        height: 15px;
+        background: #007bff;
+        border-radius: 50%;
+        cursor: pointer;
+        border: none;
+    }
 
-.volume-bar {
-    width: 100px;
-    height: 5px;
-    appearance: none;
-    background: #ddd;
-    border-radius: 2px;
-    cursor: pointer;
-}
+    #currentTime, #duration {
+        min-width: 45px;
+        color: #666;
+    }
 
-.volume-bar::-webkit-slider-thumb {
-    appearance: none;
-    width: 12px;
-    height: 12px;
-    background: #007bff;
-    border-radius: 50%;
-    cursor: pointer;
-}
+    .controls-container {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
 
-.volume-bar::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
-    background: #007bff;
-    border-radius: 50%;
-    cursor: pointer;
-    border: none;
-}
+    .volume-container {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 150px;
+    }
 
-.volume-icon {
-    font-style: normal;
-    cursor: pointer;
-}
+    .volume-bar {
+        width: 100px;
+        height: 5px;
+        appearance: none;
+        background: #ddd;
+        border-radius: 2px;
+        cursor: pointer;
+    }
 
-.hidden-row {
-    display: none;
-}
+    .volume-bar::-webkit-slider-thumb {
+        appearance: none;
+        width: 12px;
+        height: 12px;
+        background: #007bff;
+        border-radius: 50%;
+        cursor: pointer;
+    }
 
-.song-row {
-    cursor: pointer;
-}
+    .volume-bar::-moz-range-thumb {
+        width: 12px;
+        height: 12px;
+        background: #007bff;
+        border-radius: 50%;
+        cursor: pointer;
+        border: none;
+    }
 
-.song-row:hover {
-    background-color: #f8f9fa;
-}
+    .volume-icon {
+        font-style: normal;
+        cursor: pointer;
+    }
+
+    .hidden-row {
+        display: none;
+    }
+
+    .song-row {
+        cursor: pointer;
+    }
+
+    .song-row:hover {
+        background-color: #f8f9fa;
+    }
 </style>
 
 {% endblock %}
