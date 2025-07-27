@@ -450,10 +450,19 @@ async def process_playlist(request: Request, url: str = Form(...)):
 async def next_task_in_download_queue():
     next_task = DBConnector.get_next_task_in_download_queue()
     if next_task:
-        if os.path.exists(f"static/audio/{next_task[0]}.mp3"):
-            print(f"File {next_task[0]}.mp3 already exists")
-            DBConnector.delete_from_queue_for_download_by_id(next_task[0])
-            return JSONResponse({"status": "no_task"})
+        youtube_hash = next_task[1].split("=")[1]
+        if next_task[2] == 1:
+            # video
+            if os.path.exists(f"static/video/{youtube_hash}.mp4"):
+                print(f"File {youtube_hash}.mp4 already exists")
+                DBConnector.delete_from_queue_for_download_by_id(next_task[0])
+                return JSONResponse({"status": "no_task"})
+        elif next_task[2] == 0:
+            # audio
+            if os.path.exists(f"static/audio/{youtube_hash}.mp3"):
+                print(f"File {youtube_hash}.mp3 already exists")
+                DBConnector.delete_from_queue_for_download_by_id(next_task[0])
+                return JSONResponse({"status": "no_task"})
         else:
             return JSONResponse({
                 "status": "success",
@@ -464,8 +473,8 @@ async def next_task_in_download_queue():
             "status": "no_task"
         })
 
-@app.delete("/delete-song-from-download-queue/{task_id}")
-async def delete_song_from_download_queue(task_id: str):
+@app.delete("/delete-task-from-download-queue/{task_id}")
+async def delete_task_from_download_queue(task_id: str):
     DBConnector.delete_from_queue_for_download_by_id(task_id)
     return JSONResponse({
         "status": "success"
@@ -479,26 +488,31 @@ async def playlist_as_json():
         "audio_files": audio_files
     })
 
-@app.post("/move-song-to-audio-files")
-async def move_song_to_audio_files(request: Request):
+@app.post("/move-task-to-files")
+async def move_task_to_files(request: Request):
     request_body = await request.json()
     path = request_body["path"]
+    is_video = request_body["is_video"]
+
     if 'artist' not in request_body["info"] or 'title' not in request_body["info"]:
-        song_title = request_body["info"]["title"]
+        clip_title = request_body["info"]["title"]
     else:
-        song_title = request_body["info"]["artist"]+" - "+request_body["info"]["title"]
-    song_title = song_title.encode('utf-8').decode('utf-8')
-    song_url = request_body["info"]["original_url"]
+        clip_title = request_body["info"]["artist"]+" - "+request_body["info"]["title"]
+    clip_title = clip_title.encode('utf-8').decode('utf-8')
+    clip_url = request_body["info"]["original_url"]
     
-    # Insert into database
-    DBConnector.insert_into_audio_files(song_title, path, song_url)
-    
-    # Notify all connected clients about the update
-    audio_files = DBConnector.get_audio_files()
-    asyncio.create_task(playlist_manager.broadcast({
-        "type": "playlist_update",
-        "audio_files": audio_files
-    }))
+    if is_video:
+        # video
+        DBConnector.insert_into_video_files(clip_title, path, clip_url)
+    else:
+        # audio
+        DBConnector.insert_into_audio_files(clip_title, path, clip_url)
+        # Notify all connected clients about the update
+        audio_files = DBConnector.get_audio_files()
+        asyncio.create_task(playlist_manager.broadcast({
+            "type": "playlist_update",
+            "audio_files": audio_files
+        }))
     
     return JSONResponse({
         "status": "success"
