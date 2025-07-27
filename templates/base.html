@@ -1,25 +1,56 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>YouTube Audio Player</title>
+    <title>YAP</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+        .offcanvas-body a {
+            display: block;
+            padding: 10px 15px;
+            text-decoration: none;
+            color: #212529;
+            font-size: 18px;
+        }
+        
+        .offcanvas-body a:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .hamburger-button {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 1050;
+            border: none;
+            background: transparent;
+            font-size: 24px;
+        }
+    </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-light" style="position: fixed; top: 0; width: 100%; z-index: 10;">
-        <div class="container">
-            <a class="navbar-brand" href="/">YouTube Audio Player</a>
-            <div class="navbar-nav">
-                <a class="nav-link" href="/playlist">Playlist</a>
-                <a class="nav-link" href="/download">Download</a>
-            </div>
-        </div>
-    </nav>
+    <button class="hamburger-button" type="button" data-bs-toggle="offcanvas" data-bs-target="#sideMenu" aria-controls="sideMenu">
+        <i class="bi bi-list"></i>
+    </button>
     
-    <div class="container" style="margin-top: 70px;">
+    <div class="offcanvas offcanvas-start" tabindex="-1" id="sideMenu" aria-labelledby="sideMenuLabel" style="z-index: 1051;">
+        <div class="offcanvas-header">
+            <h5 class="offcanvas-title" id="sideMenuLabel">YAP</h5>
+            <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+            <a href="/">Home</a>
+            <a href="/playlist">Playlist</a>
+            <a href="/videos">Videos</a>
+            <a href="/download">Download</a>
+        </div>
+    </div>
+    
+    <div class="container" style="margin-top: 10px;">
         {% block content %}{% endblock %}
     </div>
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     {% block scripts %}{% endblock %}
 </body>
-</html> 
+</html>

@@ -1,0 +1,623 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <div class="row">
+        <!-- Video Player Column -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="card-title">{{ video_title }}</h2>
+                    <div id="player-container" class="mt-3">
+                        <video id="video-player" class="w-100" height="500" muted controls>
+                            <source src="{{ stream_url }}" type="video/mp4">
+                            Your browser does not support HTML5 video.
+                        </video>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between align-items-center mt-3">
+                        <div class="btn-group">
+                            <button id="play-btn" class="btn btn-primary">Play</button>
+                            <button id="pause-btn" class="btn btn-secondary">Pause</button>
+                            <button id="catch-up-btn" class="btn btn-secondary">Sync</button>
+                        </div>
+                        <div class="user-info">
+                            <div class="input-group">
+                                <span class="input-group-text">Your Name:</span>
+                                <input type="text" id="username-input" class="form-control">
+                                <button id="change-name-btn" class="btn btn-outline-secondary">Change</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <div class="alert alert-info">
+                            <strong>Share this page:</strong> 
+                            <span id="share-url" class="user-select-all">{{ request.url }}</span>
+                            <button id="copy-url-btn" class="btn btn-sm btn-outline-primary ms-2">Copy</button>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between">
+                                <span>Connected Users</span>
+                                <span id="connection-status" class="badge bg-success">Connected</span>
+                            </div>
+                            <div class="card-body">
+                                <ul id="users-list" class="list-group list-group-flush"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Chat Column -->
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h4>Chat</h4>
+                </div>
+                <div class="card-body d-flex flex-column h-100">
+                    <div id="chat-messages" class="flex-grow-1 overflow-auto mb-3" style="max-height: 500px;"></div>
+                    <div class="input-group mt-auto">
+                        <input type="text" id="chat-input" class="form-control" placeholder="Type a message...">
+                        <button id="send-btn" class="btn btn-primary">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Global variables
+    let videoPlayer;
+    let videoId = "{{ video_id }}";
+    let websocket;
+    let username = generateUUID();
+    let isPlaying = false;
+    let currentTime = 0;
+    let syncInterval;
+    let reconnectAttempts = 0;
+    let lastSyncUpdate = 0;
+    let syncThreshold = 3; // Seconds threshold for sync
+    let isSeeking = false;
+    let isLocalUpdate = false;
+    let isNewUser = true;
+    let pendingSyncMessages = [];
+    
+    // Generate UUID for username
+    function generateUUID() {
+        // Check local storage for username
+        if (localStorage.getItem('username')) {
+            return localStorage.getItem('username');
+        }
+
+        const uuid = 'user-' + ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+            (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+        );
+
+        // Save username to local storage
+        localStorage.setItem('username', uuid);
+        return uuid;
+    }
+    
+    // Update username input with generated UUID and connect WebSocket on page load
+    window.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('username-input').value = username;
+        
+        // Initialize video player
+        initializeVideoPlayer();
+        
+        // Connect WebSocket immediately on page load
+        connectWebSocket();
+        
+        // Set up UI event listeners that don't require the player
+        document.getElementById('change-name-btn').addEventListener('click', changeUsername);
+        
+        document.getElementById('username-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                changeUsername();
+            }
+        });
+        
+        document.getElementById('chat-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendChatMessage();
+            }
+        });
+        
+        document.getElementById('send-btn').addEventListener('click', sendChatMessage);
+        
+        document.getElementById('copy-url-btn').addEventListener('click', function() {
+            navigator.clipboard.writeText(document.getElementById('share-url').textContent)
+                .then(() => {
+                    const btn = document.getElementById('copy-url-btn');
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+                });
+        });
+    });
+    
+    // Initialize HTML5 video player
+    function initializeVideoPlayer() {
+        videoPlayer = document.getElementById('video-player');
+        
+        // Set up player-specific UI event listeners
+        document.getElementById('play-btn').addEventListener('click', function() {
+            isLocalUpdate = true;
+            videoPlayer.play();
+            sendSyncMessage(videoPlayer.currentTime, true);
+        });
+        
+        document.getElementById('pause-btn').addEventListener('click', function() {
+            isLocalUpdate = true;
+            videoPlayer.pause();
+            sendSyncMessage(videoPlayer.currentTime, false);
+        });
+        
+        document.getElementById('catch-up-btn').addEventListener('click', function() {
+            initiateCatchUp();
+        });
+        
+        // Add event listeners to the video player
+        videoPlayer.addEventListener('play', function() {
+            if (!isLocalUpdate) return;
+            isPlaying = true;
+            sendSyncMessage(videoPlayer.currentTime, true);
+            isLocalUpdate = false;
+        });
+        
+        videoPlayer.addEventListener('pause', function() {
+            if (!isLocalUpdate) return;
+            isPlaying = false;
+            sendSyncMessage(videoPlayer.currentTime, false);
+            isLocalUpdate = false;
+        });
+        
+        videoPlayer.addEventListener('seeking', function() {
+            if (!isLocalUpdate) return;
+            sendSyncMessage(videoPlayer.currentTime, !videoPlayer.paused);
+            isLocalUpdate = false;
+        });
+        
+        videoPlayer.addEventListener('loadedmetadata', function() {
+            // console.log('Video metadata loaded');
+            // Set up sync interval once video is loaded
+            syncInterval = setInterval(checkSync, 2000);
+            
+            // Process any pending sync messages
+            if (pendingSyncMessages.length > 0) {
+                // console.log(`Processing ${pendingSyncMessages.length} pending sync messages`);
+                pendingSyncMessages.forEach(message => {
+                    handleSyncMessage(message);
+                });
+                pendingSyncMessages = [];
+            }
+        });
+    }
+
+    function connectWebSocket() {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/${videoId}?username=${encodeURIComponent(username)}`;
+        
+        websocket = new WebSocket(wsUrl);
+        
+        websocket.onopen = function(e) {
+            // console.log("WebSocket connection established");
+            document.getElementById('connection-status').textContent = "Connected";
+            document.getElementById('connection-status').className = "badge bg-success";
+            reconnectAttempts = 0;
+        };
+        
+        websocket.onmessage = function(event) {
+            const message = JSON.parse(event.data);
+            handleWebSocketMessage(message);
+        };
+        
+        websocket.onclose = function(event) {
+            // console.log("WebSocket connection closed");
+            document.getElementById('connection-status').textContent = "Disconnected";
+            document.getElementById('connection-status').className = "badge bg-danger";
+            
+            // Try to reconnect after a delay
+            if (reconnectAttempts < 5) {
+                setTimeout(function() {
+                    reconnectAttempts++;
+                    connectWebSocket();
+                }, 2000 * reconnectAttempts);
+            }
+        };
+        
+        websocket.onerror = function(error) {
+            console.error("WebSocket error:", error);
+        };
+    }
+    
+    function handleWebSocketMessage(message) {
+        switch (message.type) {
+            case 'sync':
+                // If player isn't ready yet, store sync message for later
+                if (!videoPlayer || !videoPlayer.readyState) {
+                    pendingSyncMessages.push(message);
+                } else {
+                    handleSyncMessage(message);
+                }
+                break;
+                
+            case 'chat':
+                addChatMessage(message.username, message.message, new Date(message.timestamp * 1000));
+                break;
+                
+            case 'user_joined':
+                addSystemMessage(`${message.username} joined the room`);
+                break;
+                
+            case 'user_left':
+                addSystemMessage(`${message.username} left the room`);
+                break;
+                
+            case 'username_change':
+                addSystemMessage(`${message.old_username} changed name to ${message.new_username}`);
+                break;
+                
+            case 'users_list':
+                updateUsersList(message.users);
+                break;
+                
+            case 'catch_up_request':
+                handleCatchUpRequest();
+                break;
+                
+            case 'catch_up_response':
+                collectCatchUpResponse(message);
+                break;
+                
+            case 'catch_up_sync':
+                applyCatchUpSync(message);
+                break;
+        }
+    }
+    
+    function handleSyncMessage(message) {
+        // Skip if this is our own sync message or player isn't ready
+        if (message.from === username || !videoPlayer || !videoPlayer.readyState){
+            // console.log("Skipping sync message because:", message.from, username, videoPlayer, videoPlayer.readyState);
+            return;
+        }
+        
+        const data = message.data;
+        lastSyncUpdate = Date.now();
+        
+        // Update our tracking variables
+        currentTime = data.currentTime;
+        isPlaying = data.isPlaying;
+        // console.log("message data:", data); 
+        // Apply the sync
+        const playerTime = videoPlayer.currentTime;
+        const timeDiff = Math.abs(playerTime - currentTime);
+        
+        // Only seek if the difference is significant or if we're a new user
+        if (timeDiff > syncThreshold || isNewUser) {
+            isSeeking = true;
+            videoPlayer.currentTime = currentTime;
+            // console.log("Seeking to:", currentTime, "timeDiff:", timeDiff, "isNewUser:", isNewUser);
+            setTimeout(() => { isSeeking = false; }, 1000);
+        }
+        
+        // Update play state
+        if (isPlaying && videoPlayer.paused) {
+            // console.log("Playing video");
+            isLocalUpdate = false; // Prevent loop
+            videoPlayer.play().catch(e => console.error('Error playing video:', e));
+        } else if (!isPlaying && !videoPlayer.paused) {
+            // console.log("Pausing video");
+            isLocalUpdate = false; // Prevent loop
+            videoPlayer.pause();
+        }
+        
+        // If this is our first sync message, auto-play if the room is playing
+        if (isNewUser) {
+            // console.log("Auto-playing video");
+            if (isPlaying) {
+                // console.log("Auto-playing video because the room is playing");
+                isLocalUpdate = false; // Prevent loop
+                videoPlayer.play().catch(e => console.error('Error auto-playing video:', e));
+            }else{
+                // console.log("Not auto-playing video room is paused");
+            }
+            isNewUser = false;
+        }
+        // console.log("isPlaying:", isPlaying, "videoPlayer.paused:", videoPlayer.paused, "isLocalUpdate:", isLocalUpdate, "isNewUser:", isNewUser);
+    }
+    
+    function sendSyncMessage(time, isPlaying) {
+        const message = JSON.stringify({
+                type: 'sync',
+                data: {
+                    currentTime: time,
+                    isPlaying: isPlaying,
+                    lastUpdate: Date.now() / 1000
+                }
+            });
+        // console.log(message);
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            websocket.send(message);
+        }
+    }
+    
+    // Catch-up functionality
+    let catchUpResponses = [];
+    let catchUpTimeout;
+    
+    function initiateCatchUp() {
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            // Reset responses array
+            catchUpResponses = [];
+            
+            // Pause video for all users
+            isLocalUpdate = true;
+            videoPlayer.pause();
+            sendSyncMessage(videoPlayer.currentTime, false);
+            
+            // Send catch-up request to all users
+            websocket.send(JSON.stringify({
+                type: 'catch_up_request'
+            }));
+            
+            addSystemMessage("Catch-up initiated: Collecting timestamps from all viewers...");
+            
+            // Set timeout to process responses
+            catchUpTimeout = setTimeout(processCatchUpResponses, 3000);
+        }
+    }
+    
+    function handleCatchUpRequest() {
+        // Send our current timestamp
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            websocket.send(JSON.stringify({
+                type: 'catch_up_response',
+                currentTime: videoPlayer.currentTime
+            }));
+        }
+    }
+    
+    function collectCatchUpResponse(message) {
+        // Collect timestamp from another user
+        catchUpResponses.push({
+            username: message.from,
+            timestamp: message.currentTime
+        });
+    }
+    
+    function processCatchUpResponses() {
+        if (catchUpResponses.length === 0) {
+            addSystemMessage("No responses received for catch-up request.");
+            return;
+        }
+        
+        let timestamps = catchUpResponses.map(r => r.timestamp);
+        let targetTimestamp;
+        
+        if (catchUpResponses.length > 2) {
+            // With more than 2 responses, exclude outliers
+            timestamps.sort((a, b) => a - b);
+            
+            // Remove potential outliers (first and last)
+            timestamps = timestamps.slice(1, -1);
+            
+            // Find most common timestamp or average of remaining
+            targetTimestamp = findMostCommonTimestamp(timestamps);
+        } else {
+            // With 1-2 responses, just take the average
+            targetTimestamp = timestamps.reduce((sum, t) => sum + t, 0) / timestamps.length;
+        }
+        
+        // Apply the selected timestamp and broadcast to everyone
+        applyCatchUp(targetTimestamp);
+    }
+    
+    function findMostCommonTimestamp(timestamps) {
+        // Group timestamps that are within 1 second of each other
+        const groups = [];
+        
+        for (const timestamp of timestamps) {
+            let added = false;
+            
+            for (const group of groups) {
+                // Check if this timestamp fits in an existing group
+                if (Math.abs(timestamp - group.average) < 1) {
+                    group.timestamps.push(timestamp);
+                    group.average = group.timestamps.reduce((sum, t) => sum + t, 0) / group.timestamps.length;
+                    added = true;
+                    break;
+                }
+            }
+            
+            if (!added) {
+                // Create a new group
+                groups.push({
+                    timestamps: [timestamp],
+                    average: timestamp
+                });
+            }
+        }
+        
+        // Find the group with the most timestamps
+        let largestGroup = groups[0];
+        
+        for (const group of groups) {
+            if (group.timestamps.length > largestGroup.timestamps.length) {
+                largestGroup = group;
+            }
+        }
+        
+        return largestGroup.average;
+    }
+    
+    function applyCatchUp(targetTimestamp) {
+        // Broadcast the selected timestamp to everyone
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            websocket.send(JSON.stringify({
+                type: 'catch_up_sync',
+                targetTime: targetTimestamp
+            }));
+        }
+        
+        // Apply locally
+        isSeeking = true;
+        videoPlayer.currentTime = targetTimestamp;
+        
+        addSystemMessage(`Catch-up complete: Synchronized to ${targetTimestamp.toFixed(2)} seconds`);
+        
+        // Wait 1 second and resume playing
+        setTimeout(() => {
+            isSeeking = false;
+            isLocalUpdate = true;
+            videoPlayer.play();
+            sendSyncMessage(videoPlayer.currentTime, true);
+        }, 1000);
+    }
+    
+    function applyCatchUpSync(message) {
+        // Apply the catch-up sync from another user
+        isSeeking = true;
+        videoPlayer.currentTime = message.targetTime;
+        
+        addSystemMessage(`Catch-up: Synchronized to ${message.targetTime.toFixed(2)} seconds`);
+        
+        // Wait 1 second and resume playing
+        setTimeout(() => {
+            isSeeking = false;
+            isLocalUpdate = true;
+            videoPlayer.play();
+            sendSyncMessage(videoPlayer.currentTime, true);
+        }, 1000);
+    }
+    
+    function checkSync() {
+        // Don't check sync if we're currently seeking
+        if (isSeeking) return;
+        
+        // If we're playing, periodically send our position
+        if (videoPlayer && !videoPlayer.paused) {
+            sendSyncMessage(videoPlayer.currentTime, true);
+        }
+    }
+    
+    function sendChatMessage() {
+        const chatInput = document.getElementById('chat-input');
+        const message = chatInput.value.trim();
+        
+        if (message && websocket && websocket.readyState === WebSocket.OPEN) {
+            websocket.send(JSON.stringify({
+                type: 'chat',
+                message: message
+            }));
+            
+            chatInput.value = '';
+        }
+    }
+    
+    function changeUsername() {
+        const usernameInput = document.getElementById('username-input');
+        const newUsername = usernameInput.value.trim();
+        
+        if (newUsername && newUsername !== username && websocket && websocket.readyState === WebSocket.OPEN) {
+            username = newUsername;
+            // Update local storage
+            localStorage.setItem('username', username);
+            
+            websocket.send(JSON.stringify({
+                type: 'username_change',
+                username: newUsername
+            }));
+        }
+    }
+    
+    function addChatMessage(sender, text, timestamp) {
+        const chatMessages = document.getElementById('chat-messages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'mb-2';
+        
+        const time = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        messageDiv.innerHTML = `
+            <div class="d-flex justify-content-between">
+                <strong>${escapeHtml(sender)}</strong>
+                <small class="text-muted">${time}</small>
+            </div>
+            <div>${escapeHtml(text)}</div>
+        `;
+        
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    function addSystemMessage(text) {
+        const chatMessages = document.getElementById('chat-messages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'mb-2 text-center';
+        
+        messageDiv.innerHTML = `
+            <div class="small text-muted fst-italic">${escapeHtml(text)}</div>
+        `;
+        
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    function updateUsersList(users) {
+        const usersList = document.getElementById('users-list');
+        usersList.innerHTML = '';
+        
+        users.forEach(user => {
+            const li = document.createElement('li');
+            li.className = 'list-group-item d-flex justify-content-between align-items-center';
+            li.textContent = user;
+            
+            if (user === username) {
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-primary rounded-pill';
+                badge.textContent = 'You';
+                li.appendChild(badge);
+            }
+            
+            usersList.appendChild(li);
+        });
+    }
+    
+    function escapeHtml(unsafe) {
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+    
+    // Clean up on page unload
+    window.addEventListener('beforeunload', function() {
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            websocket.close();
+        }
+        if (syncInterval) {
+            clearInterval(syncInterval);
+        }
+    });
+</script>
+
+<style>
+    .btn{
+        font-size: 8px;
+        font-weight: bold;
+        color: white;
+        background-color: #007bff;
+        border: none;
+        margin: 2px;
+        cursor: pointer;
+    }
+</style>
+{% endblock %}

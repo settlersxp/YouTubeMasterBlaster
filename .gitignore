@@ -17,6 +17,7 @@ ENV/
 # Project specific
 data/audio_files.json
 static/audio/*
+static/video/*
 !static/audio/.gitkeep
 data/audio_files.db
 settings.personal

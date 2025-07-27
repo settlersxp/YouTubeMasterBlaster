@@ -1,10 +1,8 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="sticky-top">
-    <div class="container-playlist-header">
-        <h2>Playlist <span class="badge bg-secondary">{{ audio_files|length }} songs</span></h2>
-    </div>
+<div class="sticky-top bg-light">
+    <h2>Playlist <span class="badge bg-secondary">{{ audio_files|length }} songs</span></h2>
 
     <!-- Search bar -->
     <div class="mb-3 container-playlist-search">
@@ -66,7 +64,7 @@
             </div>
         </div>
     </div>
-    <audio id="audioPlayer"></audio>
+    <audio id="audioPlayer" preload="none"></audio>
 </div>
 </div>
 
@@ -75,12 +73,6 @@
         font-size: 0.75rem;
         font-weight: bold;
         padding: 5px;
-    }
-
-    .container-playlist-header h2 {
-        padding-top: 10px;
-        max-width: 50%;
-        background-color: #f8f9fa;
     }
 
     .sticky-top {
@@ -244,6 +236,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const volumeIcon = document.querySelector('.volume-icon');
     let lastVolume = 1;
     let rows = document.querySelectorAll('.song-row');
+    let playlistWebSocket = null;
+    let isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     
     // Local storage keys
     const CURRENT_SONG_KEY = 'currentSong';
@@ -259,112 +253,133 @@ document.addEventListener('DOMContentLoaded', () => {
     let songHistory = JSON.parse(localStorage.getItem(SONG_HISTORY_KEY)) || [];
     let historyPosition = parseInt(localStorage.getItem(HISTORY_POSITION_KEY)) || -1;
     
-    // Auto-refresh the playlist using the JSON endpoint
-    function refreshPlaylist() {
-        // Store current state before refresh
-        if (currentPlayingRow) {
-            const audioPath = currentPlayingRow.dataset.audio;
-            const currentTime = audioPlayer.currentTime;
-            const isPlaying = !audioPlayer.paused;
-            localStorage.setItem(CURRENT_SONG_KEY, audioPath);
-            localStorage.setItem(CURRENT_TIME_KEY, currentTime);
+    // Setup WebSocket connection for playlist updates
+    function setupPlaylistWebSocket() {
+        // Close existing connection if any
+        if (playlistWebSocket) {
+            playlistWebSocket.close();
         }
         
-        // Keep track of the currently playing song before refresh
-        const currentPlayingPath = currentPlayingRow ? currentPlayingRow.dataset.audio : null;
-        const isCurrentlyPlaying = currentPlayingRow && !audioPlayer.paused;
+        // Create new WebSocket connection
+        playlistWebSocket = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/playlist`);
         
-        fetch('/playlist-as-json')
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    // Update song count
-                    songCountBadge.textContent = `${data.audio_files.length} songs`;
-                    
-                    // Get existing audio paths in the table
-                    const existingAudioPaths = new Set();
-                    document.querySelectorAll('.song-row').forEach(row => {
-                        existingAudioPaths.add(row.dataset.audio);
+        playlistWebSocket.onopen = () => {
+            console.log('Playlist WebSocket connection established');
+        };
+        
+        playlistWebSocket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'playlist_update') {
+                // Store current state before refresh
+                if (currentPlayingRow) {
+                    const audioPath = currentPlayingRow.dataset.audio;
+                    const currentTime = audioPlayer.currentTime;
+                    const isPlaying = !audioPlayer.paused;
+                    localStorage.setItem(CURRENT_SONG_KEY, audioPath);
+                    localStorage.setItem(CURRENT_TIME_KEY, currentTime);
+                }
+                
+                // Keep track of the currently playing song before refresh
+                const currentPlayingPath = currentPlayingRow ? currentPlayingRow.dataset.audio : null;
+                const isCurrentlyPlaying = currentPlayingRow && !audioPlayer.paused;
+                
+                // Update song count
+                songCountBadge.textContent = `${data.audio_files.length} songs`;
+                
+                // Get existing audio paths in the table
+                const existingAudioPaths = new Set();
+                document.querySelectorAll('.song-row').forEach(row => {
+                    existingAudioPaths.add(row.dataset.audio);
+                });
+                
+                // Find new songs to append
+                const newSongs = data.audio_files.filter(audio => !existingAudioPaths.has(audio[1]));
+                
+                // Append only new songs
+                if (newSongs.length > 0) {
+                    let newContent = '';
+                    newSongs.forEach((audio, index) => {
+                        const rowIndex = document.querySelectorAll('.song-row').length + index;
+                        newContent += `
+                            <tr data-index="${rowIndex}" class="song-row" data-audio="${audio[1]}">
+                                <td class="song-name">${audio[0]}</td>
+                                <td>
+                                    <span class="playing-indicator"></span>
+                                </td>
+                                <td class="song-url">${audio[2]}</td>
+                            </tr>
+                        `;
                     });
                     
-                    // Find new songs to append
-                    const newSongs = data.audio_files.filter(audio => !existingAudioPaths.has(audio[1]));
+                    // Append new rows to the table
+                    tbody.insertAdjacentHTML('beforeend', newContent);
                     
-                    // Append only new songs
-                    if (newSongs.length > 0) {
-                        let newContent = '';
-                        newSongs.forEach((audio, index) => {
-                            const rowIndex = document.querySelectorAll('.song-row').length + index;
-                            newContent += `
-                                <tr data-index="${rowIndex}" class="song-row" data-audio="${audio[1]}">
-                                    <td class="song-name">${audio[0]}</td>
-                                    <td>
-                                        <span class="playing-indicator"></span>
-                                    </td>
-                                    <td class="song-url">${audio[2]}</td>
-                                </tr>
-                            `;
-                        });
-                        
-                        // Append new rows to the table
-                        tbody.insertAdjacentHTML('beforeend', newContent);
-                        
-                        // Update rows reference
-                        rows = document.querySelectorAll('.song-row');
-                        
-                        // Attach event listeners to the new rows
-                        newSongs.forEach((audio) => {
-                            const row = document.querySelector(`.song-row[data-audio="${audio[1]}"]`);
-                            if (row) {
-                                row.addEventListener('click', () => {
-                                    playAudio(row, true);
-                                });
-                            }
-                        });
-                        
-                        // Apply current search filter
-                        filterSongs(searchInput.value);
-                    }
-                    
-                    // Check for songs that need to be removed (no longer in the data)
-                    const currentAudioPaths = new Set(data.audio_files.map(audio => audio[1]));
-                    document.querySelectorAll('.song-row').forEach(row => {
-                        // Don't remove the currently playing row
-                        if (!currentAudioPaths.has(row.dataset.audio) && row.dataset.audio !== currentPlayingPath) {
-                            row.remove();
-                        }
-                    });
-                    
-                    // Update rows reference again after possible removals
+                    // Update rows reference
                     rows = document.querySelectorAll('.song-row');
                     
-                    // If we had a song playing, make sure it's still highlighted
-                    if (currentPlayingPath) {
-                        const currentRow = document.querySelector(`.song-row[data-audio="${currentPlayingPath}"]`);
-                        if (currentRow) {
-                            // Just update the UI without changing the audio state
-                            currentPlayingRow = currentRow;
-                            currentRow.classList.add('table-active');
-                            currentRow.querySelector('.playing-indicator').textContent = '▶️';
-                            
-                            // Update current song display if needed
-                            currentSongDisplay.textContent = currentRow.querySelector('.song-name').textContent;
-                            
-                            // Make sure the player control button shows the correct icon
-                            playerControlBtn.disabled = false;
-                            playerControlBtn.querySelector('.play-icon').textContent = isCurrentlyPlaying ? '⏸️' : '▶️';
-                            
-                            // Update navigation buttons
-                            updateNavigationButtons();
+                    // Attach event listeners to the new rows
+                    newSongs.forEach((audio) => {
+                        const row = document.querySelector(`.song-row[data-audio="${audio[1]}"]`);
+                        if (row) {
+                            row.addEventListener('click', () => {
+                                playAudio(row, true);
+                            });
                         }
+                    });
+                    
+                    // Apply current search filter
+                    filterSongs(searchInput.value);
+                }
+                
+                // Check for songs that need to be removed (no longer in the data)
+                const currentAudioPaths = new Set(data.audio_files.map(audio => audio[1]));
+                document.querySelectorAll('.song-row').forEach(row => {
+                    // Don't remove the currently playing row
+                    if (!currentAudioPaths.has(row.dataset.audio) && row.dataset.audio !== currentPlayingPath) {
+                        row.remove();
+                    }
+                });
+                
+                // Update rows reference again after possible removals
+                rows = document.querySelectorAll('.song-row');
+                
+                // If we had a song playing, make sure it's still highlighted
+                if (currentPlayingPath) {
+                    const currentRow = document.querySelector(`.song-row[data-audio="${currentPlayingPath}"]`);
+                    if (currentRow) {
+                        // Just update the UI without changing the audio state
+                        currentPlayingRow = currentRow;
+                        currentRow.classList.add('table-active');
+                        currentRow.querySelector('.playing-indicator').textContent = '▶️';
+                        
+                        // Update current song display if needed
+                        currentSongDisplay.textContent = currentRow.querySelector('.song-name').textContent;
+                        
+                        // Make sure the player control button shows the correct icon
+                        playerControlBtn.disabled = false;
+                        playerControlBtn.querySelector('.play-icon').textContent = isCurrentlyPlaying ? '⏸️' : '▶️';
+                        
+                        // Update navigation buttons
+                        updateNavigationButtons();
                     }
                 }
-            })
-            .catch(error => console.error('Error refreshing playlist:', error));
+            }
+        };
+        
+        playlistWebSocket.onclose = (event) => {
+            console.log('Playlist WebSocket connection closed', event);
+            // Try to reconnect after a delay
+            setTimeout(setupPlaylistWebSocket, 5000);
+        };
+        
+        playlistWebSocket.onerror = (error) => {
+            console.error('Playlist WebSocket error:', error);
+        };
     }
     
-    // Start auto-refresh
-    setInterval(refreshPlaylist, 10000);
+    // Initialize WebSocket connection
+    setupPlaylistWebSocket();
 
     function formatTime(seconds) {
         const minutes = Math.floor(seconds / 60);
@@ -478,6 +493,16 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Play the new audio
         const audioPath = row.dataset.audio;
+        
+        // Set preload strategy based on device type
+        if (isMobileDevice) {
+            // On mobile, use 'metadata' to save battery but still get duration
+            audioPlayer.preload = 'metadata';
+        } else {
+            // On desktop, preload the audio for smoother playback
+            audioPlayer.preload = 'auto';
+        }
+        
         audioPlayer.src = '/' + audioPath;
         
         // Explicitly set currentTime to 0 before playing
@@ -688,7 +713,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Highlight the current playing row
                 highlightPlayingRow(row);
                 
-                // Set audio source
+                // Set audio source with appropriate preload strategy
+                if (isMobileDevice) {
+                    audioPlayer.preload = 'metadata';
+                } else {
+                    audioPlayer.preload = 'auto';
+                }
+                
                 audioPlayer.src = '/' + savedAudioPath;
                 
                 // Set the time position
@@ -709,6 +740,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add event listeners for next and previous buttons
     document.getElementById('nextBtn').addEventListener('click', playNext);
     document.getElementById('prevBtn').addEventListener('click', playPrevious);
+    
+    // Handle page visibility changes to optimize battery usage
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden' && isMobileDevice) {
+            // If page is hidden on mobile, pause audio to save battery
+            if (audioPlayer && !audioPlayer.paused) {
+                audioPlayer.pause();
+                // We don't update the play button icon since the page is not visible
+            }
+        }
+    });
+    
+    // Clean up WebSocket connection when page is unloaded
+    window.addEventListener('beforeunload', () => {
+        if (playlistWebSocket) {
+            playlistWebSocket.close();
+        }
+    });
 });
 </script>
 {% endblock %} 
